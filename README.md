@@ -12,4 +12,4 @@
 
 ### Build on a mac run on something else:
 `docker buildx create --use`
-`docker buildx build --platform linux/amd64 -t youtube-s3-uploader:latest --push .`
+`docker buildx build --no-cache --platform linux/amd64 -t <repo>/youtube-s3-uploader:latest --push .`

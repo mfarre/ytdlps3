@@ -27,38 +27,56 @@ def upload_to_s3(local_file_path, s3_bucket, s3_key):
     s3_client = boto3.client('s3')
     s3_client.upload_file(local_file_path, s3_bucket, s3_key)
 
-def main(video_id, s3_bucket, s3_path):
-    # Create a temporary directory to store downloaded files
-    download_path = '/tmp/youtube_downloads'
-    os.makedirs(download_path, exist_ok=True)
+def log_failure(video_id, error_message, s3_bucket, s3_path):
+    error_file_path = f"/tmp/{video_id}.txt"
+    with open(error_file_path, 'w') as f:
+        f.write(error_message)
+    
+    # Upload the error file to S3 in the failed/ subfolder
+    s3_client = boto3.client('s3')
+    s3_client.upload_file(error_file_path, s3_bucket, f"failed/{video_id}.txt")
 
-    # Download the video, subtitles (if available), and metadata
-    download_youtube_video(video_id, download_path)
+def process_video(video_id, s3_bucket, s3_path):
+    try:
+        # Create a temporary directory to store downloaded files
+        download_path = '/tmp/youtube_downloads'
+        os.makedirs(download_path, exist_ok=True)
 
-    # Define file paths
-    video_file = os.path.join(download_path, f'{video_id}.mp4')
-    metadata_file = os.path.join(download_path, f'{video_id}.info.json')
-    subtitle_file = os.path.join(download_path, f'{video_id}.vtt')
+        # Download the video, subtitles (if available), and metadata
+        download_youtube_video(video_id, download_path)
 
-    # Upload each file to the specified S3 path if it exists
-    if os.path.exists(video_file):
-        upload_to_s3(video_file, s3_bucket, os.path.join(s3_path, f'{video_id}.mp4'))
-    if os.path.exists(metadata_file):
-        upload_to_s3(metadata_file, s3_bucket, os.path.join(s3_path, f'{video_id}.json'))
-    if os.path.exists(subtitle_file):
-        upload_to_s3(subtitle_file, s3_bucket, os.path.join(s3_path, f'{video_id}.vtt'))
+        # Define file paths
+        video_file = os.path.join(download_path, f'{video_id}.mp4')
+        metadata_file = os.path.join(download_path, f'{video_id}.info.json')
+        subtitle_file = os.path.join(download_path, f'{video_id}.vtt')
 
-    # Cleanup
-    for file_name in os.listdir(download_path):
-        os.remove(os.path.join(download_path, file_name))
+        # Upload each file to the specified S3 path if it exists
+        if os.path.exists(video_file):
+            upload_to_s3(video_file, s3_bucket, os.path.join(s3_path, f'{video_id}.mp4'))
+        if os.path.exists(metadata_file):
+            upload_to_s3(metadata_file, s3_bucket, os.path.join(s3_path, f'{video_id}.json'))
+        if os.path.exists(subtitle_file):
+            upload_to_s3(subtitle_file, s3_bucket, os.path.join(s3_path, f'{video_id}.en.vtt'))
+
+        # Cleanup
+        for file_name in os.listdir(download_path):
+            os.remove(os.path.join(download_path, file_name))
+
+    except Exception as e:
+        error_message = str(e)
+        log_failure(video_id, error_message, s3_bucket, s3_path)
+
+def main(video_ids, s3_bucket, s3_path):
+    for video_id in video_ids:
+        process_video(video_id, s3_bucket, s3_path)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print("Usage: python download_and_upload.py <youtube_video_id> <s3_bucket_name> <s3_path>")
+    if len(sys.argv) < 4:
+        print("Usage: python download_and_upload.py <s3_bucket_name> <s3_path> <youtube_video_id_1> [<youtube_video_id_2> ...]")
         sys.exit(1)
 
-    video_id = sys.argv[1]
-    s3_bucket = sys.argv[2]
-    s3_path = sys.argv[3]
+    s3_bucket = sys.argv[1]
+    s3_path = sys.argv[2]
+    video_ids = sys.argv[3:]
 
-    main(video_id, s3_bucket, s3_path)
+    main(video_ids, s3_bucket, s3_path)

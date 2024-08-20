@@ -16,12 +16,14 @@ def download_youtube_video(video_id, output_path):
     with YoutubeDL(ydl_opts) as ydl:
         info_dict = ydl.extract_info(video_id, download=True)
         
-        # Check if English subtitles are available
+        # Get the correct subtitle file path from the info_dict
+        subtitle_file_path = None
         subtitles = info_dict.get('subtitles')
-        if subtitles is None or 'en' not in subtitles:
-            subtitle_file = os.path.join(output_path, f'{video_id}.vtt')
-            if os.path.exists(subtitle_file):
-                os.remove(subtitle_file)
+        if subtitles and 'en' in subtitles:
+            subtitle_data = subtitles['en'][0]  # Get the first English subtitle entry
+            subtitle_file_path = ydl.prepare_filename(info_dict).replace('.mp4', '.en.vtt')
+        
+        return info_dict, subtitle_file_path
 
 def upload_to_s3(local_file_path, s3_bucket, s3_key):
     s3_client = boto3.client('s3')
@@ -43,20 +45,19 @@ def process_video(video_id, s3_bucket, s3_path):
         os.makedirs(download_path, exist_ok=True)
 
         # Download the video, subtitles (if available), and metadata
-        download_youtube_video(video_id, download_path)
+        info_dict, subtitle_file_path = download_youtube_video(video_id, download_path)
 
         # Define file paths
         video_file = os.path.join(download_path, f'{video_id}.mp4')
         metadata_file = os.path.join(download_path, f'{video_id}.info.json')
-        subtitle_file = os.path.join(download_path, f'{video_id}.vtt')
 
         # Upload each file to the specified S3 path if it exists
         if os.path.exists(video_file):
             upload_to_s3(video_file, s3_bucket, os.path.join(s3_path, f'{video_id}.mp4'))
         if os.path.exists(metadata_file):
             upload_to_s3(metadata_file, s3_bucket, os.path.join(s3_path, f'{video_id}.json'))
-        if os.path.exists(subtitle_file):
-            upload_to_s3(subtitle_file, s3_bucket, os.path.join(s3_path, f'{video_id}.en.vtt'))
+        if subtitle_file_path and os.path.exists(subtitle_file_path):
+            upload_to_s3(subtitle_file_path, s3_bucket, os.path.join(s3_path, f'{video_id}.en.vtt'))
 
         # Cleanup
         for file_name in os.listdir(download_path):
